@@ -4,6 +4,7 @@ import numpy as np
 from music21 import converter, instrument, note, chord
 from keras.utils import np_utils
 
+
 def get_notes(dir):
     notes = []
 
@@ -17,7 +18,7 @@ def get_notes(dir):
         try:
             s2 = instrument.partitionByInstrument(midi)
             notes_to_parse = s2.parts[0].recurse()
-        except:
+        except Exception:
             notes_to_parse = midi.flat.notes
 
         for element in notes_to_parse:
@@ -30,6 +31,7 @@ def get_notes(dir):
         pickle.dump(notes, filepath)
 
     return notes
+
 
 def get_sequence(notes, seq_len, vocab_size):
     vocab = sorted(set(item for item in notes))
@@ -44,7 +46,6 @@ def get_sequence(notes, seq_len, vocab_size):
         train_output.append(note_to_int[seq_out])
 
     train_input = np.reshape(train_input, [len(train_input), seq_len, 1])
-    train_input = train_input / float(vocab_size)
     train_output = np_utils.to_categorical(train_output)
 
     print(train_input.shape)
