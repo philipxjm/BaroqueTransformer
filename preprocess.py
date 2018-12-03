@@ -3,10 +3,16 @@ import pickle
 import numpy as np
 from music21 import converter, instrument, note, chord
 from keras.utils import np_utils
+import os.path
 
 
 def get_notes(dir):
     notes = []
+
+    if os.path.isfile('data/notes/' + dir[:-1]):
+        with open('data/notes/' + dir[:-1], 'rb') as filepath:
+            notes = pickle.load(filepath)
+        return notes
 
     for file in glob.glob("data/midi/" + dir + "*.mid"):
         midi = converter.parse(file)
@@ -30,6 +36,7 @@ def get_notes(dir):
     with open('data/notes/' + dir[:-1], 'wb') as filepath:
         pickle.dump(notes, filepath)
 
+    print(notes)
     return notes
 
 
@@ -52,3 +59,5 @@ def get_sequence(notes, seq_len, vocab_size):
     print(train_output.shape)
 
     return train_input, train_output
+
+# get_notes("chopin/")

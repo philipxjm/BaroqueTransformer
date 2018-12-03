@@ -7,19 +7,16 @@ from keras.callbacks import ModelCheckpoint
 def build_model(seq_size, channel_size, vocab_size):
     model = Sequential()
     model.add(LSTM(
-        1024,
+        512,
         input_shape=(seq_size, channel_size),
         return_sequences=True
     ))
     model.add(Dropout(0.3))
-    model.add(LSTM(1024, return_sequences=True))
+    model.add(LSTM(512, return_sequences=True))
     model.add(Dropout(0.3))
-    model.add(LSTM(1024))
-    model.add(Dense(512))
-    model.add(Dropout(0.3))
+    model.add(LSTM(512))
     model.add(Dense(256))
     model.add(Dropout(0.3))
-    # model.add(Activation('softmax'))
     model.add(Dense(vocab_size))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
@@ -59,7 +56,7 @@ def generate_notes(model, weights, network_input, pitchnames, vocab_size):
     prediction_output = []
 
     for note_index in range(500):
-        print(pattern)
+        # print(pattern)
         prediction_input = np.reshape(pattern, (1, len(pattern), 1))
         prediction_input = prediction_input / float(vocab_size)
 

@@ -1,14 +1,17 @@
 import pickle
 from preprocess import get_notes, get_sequence
 from model import build_model, train, generate_notes
+from music21 import instrument, note, stream, chord
+
+seq_len = 50
 
 
 def train_model(dir):
     notes = get_notes(dir)
     vocab_size = len(set(notes))
-    train_input, train_output = get_sequence(notes, 100, vocab_size)
+    train_input, train_output = get_sequence(notes, seq_len, vocab_size)
     train_input = train_input / float(vocab_size)
-    model = build_model(100, 1, vocab_size)
+    model = build_model(seq_len, 1, vocab_size)
     train(model, train_input, train_output, dir)
 
 
@@ -19,18 +22,44 @@ def generate(notes_path, weights):
     pitchnames = sorted(set(item for item in notes))
     vocab_size = len(set(notes))
 
-    train_input, _ = get_sequence(notes, 100, vocab_size)
-    model = build_model(100, 1, vocab_size)
+    # print(pitchnames)
+
+    train_input, _ = get_sequence(notes, seq_len, vocab_size)
+
+    # print(train_input.shape)
+    model = build_model(seq_len, 1, vocab_size)
+    model.load_weights(weights)
     generated_notes = generate_notes(
         model, weights, train_input, pitchnames, vocab_size)
     print(generated_notes)
     create_midi(generated_notes)
 
 
-def create_midi(notes):
-    pass
+def create_midi(logits):
+    offset = 0
+    output_notes = []
+    for pattern in logits:
+        if ('.' in pattern) or pattern.isdigit():
+            notes_in_chord = pattern.split('.')
+            notes = []
+            for current_note in notes_in_chord:
+                new_note = note.Note(int(current_note))
+                new_note.storedInstrument = instrument.Piano()
+                notes.append(new_note)
+            new_chord = chord.Chord(notes)
+            new_chord.offset = offset
+            output_notes.append(new_chord)
+        else:
+            new_note = note.Note(pattern)
+            new_note.offset = offset
+            new_note.storedInstrument = instrument.Piano()
+            output_notes.append(new_note)
+        offset += 0.5
+
+    midi_stream = stream.Stream(output_notes)
+    midi_stream.write('midi', fp='test_output.mid')
 
 
 if __name__ == '__main__':
     # train_model("chopin/")
-    generate('chopin', 'weights/chopin-07-4.7131.hdf5')
+    generate('chopin', 'weights/chopin-97-0.8396.hdf5')
