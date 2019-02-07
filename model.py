@@ -1,25 +1,29 @@
 import numpy as np
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, LSTM, Activation
+from keras.layers import Dense, Dropout, LSTM, Activation, Lambda
+from keras.layers import Bidirectional
+from keras.layers.embeddings import Embedding
 from keras.callbacks import ModelCheckpoint
+from keras import backend as k
 
 
 def build_model(seq_size, channel_size, vocab_size):
     model = Sequential()
+    # model.add(Lambda(lambda x: k.squeeze(x, 2)))
+    # model.add(Embedding(vocab_size, 100, input_length=seq_size))
     model.add(LSTM(
         512,
         input_shape=(seq_size, channel_size),
         return_sequences=True
     ))
-    model.add(Dropout(0.3))
-    model.add(LSTM(512, return_sequences=True))
-    model.add(Dropout(0.3))
-    model.add(LSTM(512))
-    model.add(Dense(256))
-    model.add(Dropout(0.3))
-    model.add(Dense(vocab_size))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+    model.add(Dropout(0.5))
+    model.add(LSTM(
+        512
+    ))
+    model.add(Dropout(0.5))
+    model.add(Dense(256, activation="relu"))
+    model.add(Dense(vocab_size, activation="softmax"))
+    model.compile(loss='categorical_crossentropy', optimizer='adam')
 
     return model
 
@@ -37,7 +41,7 @@ def train(model, train_input, train_output, dir):
     model.fit(
         train_input,
         train_output,
-        epochs=200,
+        epochs=500,
         batch_size=64,
         callbacks=[checkpoint]
     )

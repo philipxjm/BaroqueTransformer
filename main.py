@@ -24,10 +24,12 @@ def generate(notes_path, weights):
 
     # print(pitchnames)
 
-    train_input, _ = get_sequence(notes, seq_len, vocab_size)
+    train_input, train_output = get_sequence(notes, seq_len, vocab_size)
 
     # print(train_input.shape)
     model = build_model(seq_len, 1, vocab_size)
+    model.fit(train_input, train_output, epochs=0)
+    print(model.summary())
     model.load_weights(weights)
     generated_notes = generate_notes(
         model, weights, train_input, pitchnames, vocab_size)
@@ -61,5 +63,5 @@ def create_midi(logits):
 
 
 if __name__ == '__main__':
-    # train_model("chopin/")
-    generate('chopin', 'weights/chopin-97-0.8396.hdf5')
+    train_model("bach_test/")
+    # generate('bach_test', 'weights/bach_test-54-0.0643.hdf5')
