@@ -3,10 +3,16 @@ import tensorflow as tf
 BATCH_SIZE = 10
 SEQ_LEN = 128
 NOTE_LEN = 78
+EPS = 1e-10
 
 
 class Model:
-    def __init__(self, inputs, labels, keep_prob, time_sizes, note_sizes):
+    def __init__(self,
+                 inputs,
+                 labels,
+                 keep_prob,
+                 time_sizes=[300, 300],
+                 note_sizes=[100, 50]):
         self.inputs = inputs  # input shape (batch, time, note, feature)
         self.labels = labels  # label shape (batch, time, note, out)
         self.keep_prob = keep_prob
@@ -20,6 +26,8 @@ class Model:
     def forward_pass(self):
         x = tf.transpose(self.inputs, perm=[0, 2, 1, 3])
         x = tf.reshape(x, [BATCH_SIZE * NOTE_LEN, SEQ_LEN, -1])
+
+        # time model
         with tf.variable_scope('time_model'):
             time_lstm_cell = tf.contrib.rnn.MultiRNNCell(
                 [tf.contrib.rnn.LSTMCell(sz) for sz in self.time_sizes]
@@ -29,10 +37,12 @@ class Model:
                                             dtype=tf.float32)
             time_out = tf.nn.dropout(time_out, self.keep_prob)
 
+        # reshape from note invariant to time invariant
         time_out = tf.reshape(time_out, [BATCH_SIZE, NOTE_LEN, SEQ_LEN, -1])
         time_out = tf.transpose(time_out, perm=[0, 2, 1, 3])
         time_out = tf.reshape(time_out, [BATCH_SIZE * SEQ_LEN, NOTE_LEN, -1])
 
+        # note model
         with tf.variable_scope('note_model'):
             note_lstm_cell = tf.contrib.rnn.MultiRNNCell(
                 [tf.contrib.rnn.LSTMCell(sz) for sz in self.note_sizes]
@@ -42,16 +52,18 @@ class Model:
                                             dtype=tf.float32)
             note_out = tf.nn.dropout(note_out, self.keep_prob)
 
+        # dense layer
         W = tf.Variable(tf.random_normal([self.note_sizes[-1], 2],
                                          stddev=0.01,
                                          dtype=tf.float32))
         b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
         note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
-
-        return tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
+        note_out = tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
+        return tf.nn.softmax(note_out)
 
     def optimizer(self):
         return tf.train.AdamOptimizer(1e-3).minimize(self.loss)
 
     def loss_function(self):
-        return tf.losses.log_loss(self.labels, self.prediction)
+        return tf.math.reduce_mean(self.prediction * tf.log(self.labels+EPS) + (1-self.prediction) * tf.log(1-self.labels+EPS))
+        # return tf.losses.log_loss(self.labels, self.prediction)

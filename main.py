@@ -62,20 +62,15 @@ def train(model, pieces, epochs, start=0):
         l, _ = sess.run([model.loss, model.optimize],
                         feed_dict={model.inputs: x,
                                    model.labels: y})
-        p = sess.run([model.prediction],
-                     feed_dict={model.inputs: x,
-                     model.labels: y})
-        print(p)
         # if i % 100 == 0:
         print("epoch {}, loss={}".format(i, l))
-        # if i % 500 == 0:
-        #     noteStateMatrixToMidi(np.concatenate(
-        #                              (np.expand_dims(xOpt[0], 0),
-        #                               model.predict_fun(SEQ_LEN,
-        #                                                 1,
-        #                                                 xIpt[0])),
-        #                               axis=0),
-        #                           'output/sample{}'.format(i))
+        if i % 100 == 0:
+            p = sess.run(model.prediction,
+                         feed_dict={model.inputs: x,
+                                    model.labels: y})
+            print(np.array(p)[0])
+            noteStateMatrixToMidi(np.array(p)[0],
+                                  'output/sample{}'.format(i))
         #     pickle.dump(model.learned_config,
         #                 open('output/params{}.p'.format(i), 'wb'))
 
