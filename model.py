@@ -1,76 +1,57 @@
-import numpy as np
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, LSTM, Activation, Lambda
-from keras.layers import Bidirectional
-from keras.layers.embeddings import Embedding
-from keras.callbacks import ModelCheckpoint
-from keras import backend as k
+import tensorflow as tf
+
+BATCH_SIZE = 10
+SEQ_LEN = 128
+NOTE_LEN = 78
 
 
-def build_model(seq_size, channel_size, vocab_size):
-    model = Sequential()
-    # model.add(Lambda(lambda x: k.squeeze(x, 2)))
-    # model.add(Embedding(vocab_size, 100, input_length=seq_size))
-    model.add(LSTM(
-        512,
-        input_shape=(seq_size, channel_size),
-        return_sequences=True
-    ))
-    model.add(Dropout(0.5))
-    model.add(LSTM(
-        512
-    ))
-    model.add(Dropout(0.5))
-    model.add(Dense(256, activation="relu"))
-    model.add(Dense(vocab_size, activation="softmax"))
-    model.compile(loss='categorical_crossentropy', optimizer='adam')
+class Model:
+    def __init__(self, inputs, labels, keep_prob, time_sizes, note_sizes):
+        self.inputs = inputs  # input shape (batch, time, note, feature)
+        self.labels = labels  # label shape (batch, time, note, out)
+        self.keep_prob = keep_prob
+        self.time_sizes = time_sizes
+        self.note_sizes = note_sizes
 
-    return model
+        self.prediction = self.forward_pass()
+        self.loss = self.loss_function()
+        self.optimize = self.optimizer()
 
+    def forward_pass(self):
+        x = tf.transpose(self.inputs, perm=[0, 2, 1, 3])
+        x = tf.reshape(x, [BATCH_SIZE * NOTE_LEN, SEQ_LEN, -1])
+        with tf.variable_scope('time_model'):
+            time_lstm_cell = tf.contrib.rnn.MultiRNNCell(
+                [tf.contrib.rnn.LSTMCell(sz) for sz in self.time_sizes]
+            )
+            time_out, _ = tf.nn.dynamic_rnn(cell=time_lstm_cell,
+                                            inputs=x,
+                                            dtype=tf.float32)
+            time_out = tf.nn.dropout(time_out, self.keep_prob)
 
-def train(model, train_input, train_output, dir):
-    path = "weights/" + dir[:-1] + "-{epoch:02d}-{loss:.4f}.hdf5"
-    checkpoint = ModelCheckpoint(
-        path,
-        monitor='loss',
-        verbose=0,
-        save_best_only=True,
-        mode='min'
-    )
+        time_out = tf.reshape(time_out, [BATCH_SIZE, NOTE_LEN, SEQ_LEN, -1])
+        time_out = tf.transpose(time_out, perm=[0, 2, 1, 3])
+        time_out = tf.reshape(time_out, [BATCH_SIZE * SEQ_LEN, NOTE_LEN, -1])
 
-    model.fit(
-        train_input,
-        train_output,
-        epochs=500,
-        batch_size=64,
-        callbacks=[checkpoint]
-    )
+        with tf.variable_scope('note_model'):
+            note_lstm_cell = tf.contrib.rnn.MultiRNNCell(
+                [tf.contrib.rnn.LSTMCell(sz) for sz in self.note_sizes]
+            )
+            note_out, _ = tf.nn.dynamic_rnn(cell=note_lstm_cell,
+                                            inputs=time_out,
+                                            dtype=tf.float32)
+            note_out = tf.nn.dropout(note_out, self.keep_prob)
 
+        W = tf.Variable(tf.random_normal([self.note_sizes[-1], 2],
+                                         stddev=0.01,
+                                         dtype=tf.float32))
+        b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
+        note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
 
-def generate_notes(model, weights, network_input, pitchnames, vocab_size):
-    model.load_weights(weights)
-    start = np.random.randint(0, len(network_input)-1)
+        return tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
 
-    int_to_note = dict(
-        (number, note) for number, note in enumerate(pitchnames))
+    def optimizer(self):
+        return tf.train.AdamOptimizer(1e-3).minimize(self.loss)
 
-    # print(int_to_note)
-
-    pattern = list(network_input[start])
-    prediction_output = []
-
-    for note_index in range(500):
-        # print(pattern)
-        prediction_input = np.reshape(pattern, (1, len(pattern), 1))
-        prediction_input = prediction_input / float(vocab_size)
-
-        prediction = model.predict(prediction_input, verbose=0)
-
-        index = np.argmax(prediction)
-        result = int_to_note[index]
-        prediction_output.append(result)
-
-        pattern.append(index)
-        pattern = pattern[1:len(pattern)]
-
-    return prediction_output
+    def loss_function(self):
+        return tf.losses.log_loss(self.labels, self.prediction)

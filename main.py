@@ -1,67 +1,91 @@
 import pickle
-from preprocess import get_notes, get_sequence
-from model import build_model, train, generate_notes
-from music21 import instrument, note, stream, chord
+import model
+import tensorflow as tf
+import os
+import random
+from midi_handler import midiToNoteStateMatrix, noteStateMatrixToMidi
+from data import noteStateMatrixToInputForm
+import numpy as np
 
-seq_len = 50
-
-
-def train_model(dir):
-    notes = get_notes(dir)
-    vocab_size = len(set(notes))
-    train_input, train_output = get_sequence(notes, seq_len, vocab_size)
-    train_input = train_input / float(vocab_size)
-    model = build_model(seq_len, 1, vocab_size)
-    train(model, train_input, train_output, dir)
+BATCH_SIZE = 10
+SEQ_LEN = 128
+NOTE_LEN = 78
+DIVISION_LEN = 16
 
 
-def generate(notes_path, weights):
-    with open('data/notes/' + notes_path, 'rb') as filepath:
-        notes = pickle.load(filepath)
+def loadPieces(dirpath):
+    # loads midi pieces and converts them each to midi state matrices.
+    pieces = {}
 
-    pitchnames = sorted(set(item for item in notes))
-    vocab_size = len(set(notes))
+    for fname in os.listdir(dirpath):
+        if fname[-4:] not in ('.mid', '.MID'):
+            continue
 
-    # print(pitchnames)
+        name = fname[:-4]
 
-    train_input, train_output = get_sequence(notes, seq_len, vocab_size)
+        outMatrix = midiToNoteStateMatrix(os.path.join(dirpath, fname))
+        if len(outMatrix) < SEQ_LEN:
+            # Skip if piece is too short or is not 4/4 time.
+            continue
 
-    # print(train_input.shape)
-    model = build_model(seq_len, 1, vocab_size)
-    model.fit(train_input, train_output, epochs=0)
-    print(model.summary())
-    model.load_weights(weights)
-    generated_notes = generate_notes(
-        model, weights, train_input, pitchnames, vocab_size)
-    print(generated_notes)
-    create_midi(generated_notes)
+        pieces[name] = outMatrix
+        print("Loaded {}".format(name))
+
+    return pieces
 
 
-def create_midi(logits):
-    offset = 0
-    output_notes = []
-    for pattern in logits:
-        if ('.' in pattern) or pattern.isdigit():
-            notes_in_chord = pattern.split('.')
-            notes = []
-            for current_note in notes_in_chord:
-                new_note = note.Note(int(current_note))
-                new_note.storedInstrument = instrument.Piano()
-                notes.append(new_note)
-            new_chord = chord.Chord(notes)
-            new_chord.offset = offset
-            output_notes.append(new_chord)
-        else:
-            new_note = note.Note(pattern)
-            new_note.offset = offset
-            new_note.storedInstrument = instrument.Piano()
-            output_notes.append(new_note)
-        offset += 0.5
+def getPieceSegment(pieces):
+    # randomly pick from pieces a batch_len long segment
+    piece_output = random.choice(list(pieces.values()))
+    start = random.randrange(0, len(piece_output)-SEQ_LEN, DIVISION_LEN)
 
-    midi_stream = stream.Stream(output_notes)
-    midi_stream.write('midi', fp='test_output.mid')
+    # (batch_len, pitch_sz, 2)
+    seg_out = piece_output[start:start+SEQ_LEN]
+    # (batch_len, pitch_sz, 80)
+    seg_in = noteStateMatrixToInputForm(seg_out)
+
+    return seg_in, seg_out
+
+
+def getPieceBatch(pieces):
+    # (batch_size, batch_len, pitch_sz, 80)
+    # (batch_size, batch_len, pitch_sz, 2)
+    i, o = zip(*[getPieceSegment(pieces) for _ in range(BATCH_SIZE)])
+    return np.array(i, dtype=float), np.array(o, dtype=float)
+
+
+def train(model, pieces, epochs, start=0):
+    sess = tf.Session()
+    sess.run(tf.global_variables_initializer())
+    for i in range(start, start+epochs):
+        x, y = getPieceBatch(pieces)
+        l, _ = sess.run([model.loss, model.optimize],
+                        feed_dict={model.inputs: x,
+                                   model.labels: y})
+        p = sess.run([model.prediction],
+                     feed_dict={model.inputs: x,
+                     model.labels: y})
+        print(p)
+        # if i % 100 == 0:
+        print("epoch {}, loss={}".format(i, l))
+        # if i % 500 == 0:
+        #     noteStateMatrixToMidi(np.concatenate(
+        #                              (np.expand_dims(xOpt[0], 0),
+        #                               model.predict_fun(SEQ_LEN,
+        #                                                 1,
+        #                                                 xIpt[0])),
+        #                               axis=0),
+        #                           'output/sample{}'.format(i))
+        #     pickle.dump(model.learned_config,
+        #                 open('output/params{}.p'.format(i), 'wb'))
 
 
 if __name__ == '__main__':
-    train_model("bach_test/")
-    # generate('bach_test', 'weights/bach_test-54-0.0643.hdf5')
+    inputs = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
+                                               NOTE_LEN, 80])
+    labels = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
+                                               NOTE_LEN, 2])
+    pcs = loadPieces("data/midi/chopin")
+    print(getPieceBatch(pcs)[0].shape)
+    m = model.Model(inputs, labels, 0.5, [300, 300], [100, 50])
+    train(m, pcs, 10000)

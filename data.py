@@ -74,5 +74,5 @@ def noteStateMatrixToInputForm(statematrix):
 
     inputform = [noteStateSingleToInputForm(state, time)
                  for time, state in enumerate(statematrix)]
-    print(np.array(inputform).shape)
+    # print(np.array(inputform).shape)
     return inputform
