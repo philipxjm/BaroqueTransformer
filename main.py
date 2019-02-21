@@ -1,4 +1,3 @@
-import pickle
 import model
 import tensorflow as tf
 import os
@@ -24,7 +23,7 @@ def loadPieces(dirpath):
         name = fname[:-4]
 
         outMatrix = midiToNoteStateMatrix(os.path.join(dirpath, fname))
-        if len(outMatrix) < SEQ_LEN:
+        if len(outMatrix) < SEQ_LEN+1:
             # Skip if piece is too short or is not 4/4 time.
             continue
 
@@ -37,14 +36,14 @@ def loadPieces(dirpath):
 def getPieceSegment(pieces):
     # randomly pick from pieces a batch_len long segment
     piece_output = random.choice(list(pieces.values()))
-    start = random.randrange(0, len(piece_output)-SEQ_LEN, DIVISION_LEN)
+    start = random.randrange(0, len(piece_output)-SEQ_LEN+1, DIVISION_LEN)
 
     # (batch_len, pitch_sz, 2)
-    seg_out = piece_output[start:start+SEQ_LEN]
+    seg_out = piece_output[start:start+SEQ_LEN+1]
     # (batch_len, pitch_sz, 80)
     seg_in = noteStateMatrixToInputForm(seg_out)
 
-    return seg_in, seg_out
+    return seg_in[:-1], seg_out[1:]
 
 
 def getPieceBatch(pieces):
@@ -57,6 +56,7 @@ def getPieceBatch(pieces):
 def train(model, pieces, epochs, start=0):
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
+    saver = tf.train.Saver()
     for i in range(start, start+epochs):
         x, y = getPieceBatch(pieces)
         l, _ = sess.run([model.loss, model.optimize],
@@ -68,11 +68,11 @@ def train(model, pieces, epochs, start=0):
             p = sess.run(model.prediction,
                          feed_dict={model.inputs: x,
                                     model.labels: y})
-            print(np.array(p)[0])
+            print(np.array(p)[0].shape)
             noteStateMatrixToMidi(np.array(p)[0],
                                   'output/sample{}'.format(i))
-        #     pickle.dump(model.learned_config,
-        #                 open('output/params{}.p'.format(i), 'wb'))
+        if i % 1000 == 0:
+            saver.save(sess, 'model/model_' + str(l), global_step=i)
 
 
 if __name__ == '__main__':
