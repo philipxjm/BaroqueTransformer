@@ -53,7 +53,7 @@ def getPieceBatch(pieces):
     return np.array(i, dtype=float), np.array(o, dtype=float)
 
 
-def train(model, pieces, epochs, start=0):
+def train(model, pieces, epochs, save_name, start=0):
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver()
@@ -71,8 +71,31 @@ def train(model, pieces, epochs, start=0):
             print(np.array(p)[0].shape)
             noteStateMatrixToMidi(np.array(p)[0],
                                   'output/sample{}'.format(i))
-        if i % 1000 == 0:
-            saver.save(sess, 'model/model_' + str(l), global_step=i)
+        if i % 500 == 0:
+            saver.save(sess,
+                       'model/' + save_name + '/model_' + str(l),
+                       global_step=i)
+    l = sess.run([model.loss],
+                 feed_dict={model.inputs: x,
+                            model.labels: y})
+    saver.save(sess, 'model/' + save_name + '/model_final_' + str(l))
+
+
+def generate(model, pieces, save_name):
+    sess = tf.Session()
+    saver = tf.train.Saver()
+    saver = tf.train.import_meta_graph(save_name + '.meta')
+    saver.restore(sess, save_name)
+    x, y = getPieceBatch(pieces)
+    p = sess.run(model.prediction,
+                 feed_dict={model.inputs: x,
+                            model.labels: y})
+    p = p[0]
+    r = np.random.random(p.shape)
+    p = np.greater(p, r).astype(int)
+    p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
+    noteStateMatrixToMidi(p, 'output/sample')
+    print(p)
 
 
 if __name__ == '__main__':
@@ -83,4 +106,5 @@ if __name__ == '__main__':
     pcs = loadPieces("data/midi/chopin")
     print(getPieceBatch(pcs)[0].shape)
     m = model.Model(inputs, labels, 0.5, [300, 300], [100, 50])
-    train(m, pcs, 10000)
+    # train(m, pcs, 10000)
+    generate(m, pcs, "model/model_4424.5376-9000")

@@ -109,5 +109,5 @@ def noteStateMatrixToMidi(statematrix, name="example"):
     midi.write_midifile("{}.mid".format(name), pattern)
 
 
-print(np.array(midiToNoteStateMatrix("data/midi/chopin/chpn_op66.mid")).shape)
+# print(np.array(midiToNoteStateMatrix("data/midi/chopin/chpn_op66.mid")))
 # noteStateMatrixToMidi(midiToNoteStateMatrix("data/midi/chopin/chpn_op66.mid"))

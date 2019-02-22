@@ -3,7 +3,7 @@ import tensorflow as tf
 BATCH_SIZE = 10
 SEQ_LEN = 128
 NOTE_LEN = 78
-EPS = 1e-8
+EPS = 1e-10
 
 
 class Model:
@@ -77,7 +77,5 @@ class Model:
                                                         * self.labels
                                                         - self.prediction
                                                         - self.labels + 1,
-                                                        1e-10, 1.0))
+                                                        EPS, 1.0))
         return -tf.math.reduce_sum(loglikelihoods)
-        # return tf.math.reduce_mean(self.prediction * tf.log(self.labels+EPS) + (1-self.prediction) * tf.log(1-self.labels+EPS))
-        # return tf.losses.log_loss(self.labels, self.prediction)
