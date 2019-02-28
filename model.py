@@ -30,7 +30,7 @@ class Model:
         # time model
         with tf.variable_scope('time_model'):
             time_lstm_cell = tf.contrib.rnn.MultiRNNCell(
-                [tf.contrib.rnn.LSTMCell(sz) for sz in self.time_sizes]
+                [tf.contrib.rnn.GRUCell(sz) for sz in self.time_sizes]
             )
             time_out, _ = tf.nn.dynamic_rnn(cell=time_lstm_cell,
                                             inputs=x,
@@ -51,7 +51,7 @@ class Model:
         # note model
         with tf.variable_scope('note_model'):
             note_lstm_cell = tf.contrib.rnn.MultiRNNCell(
-                [tf.contrib.rnn.LSTMCell(sz) for sz in self.note_sizes]
+                [tf.contrib.rnn.GRUCell(sz) for sz in self.note_sizes]
             )
             note_out, _ = tf.nn.dynamic_rnn(cell=note_lstm_cell,
                                             inputs=hidden,
@@ -65,7 +65,7 @@ class Model:
         b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
         note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
         note_out = tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
-        return tf.nn.softmax(note_out, axis=2)
+        return tf.nn.sigmoid(note_out)
 
     def optimizer(self):
         return tf.train.AdamOptimizer(1e-3).minimize(self.loss)
@@ -78,4 +78,4 @@ class Model:
                                                         - self.prediction
                                                         - self.labels + 1,
                                                         EPS, 1.0))
-        return -tf.math.reduce_sum(loglikelihoods)
+        return -tf.math.reduce_mean(loglikelihoods)
