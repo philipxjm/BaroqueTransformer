@@ -11,6 +11,8 @@ class Model:
                  inputs,
                  labels,
                  keep_prob,
+                 time_state,
+                 note_state,
                  time_sizes=[300, 300],
                  note_sizes=[100, 50]):
         self.inputs = inputs  # input shape (batch, time, note, feature)
@@ -19,7 +21,11 @@ class Model:
         self.time_sizes = time_sizes
         self.note_sizes = note_sizes
 
-        self.prediction = self.forward_pass()
+        self.time_state = time_state
+        self.note_state = note_state
+
+        self.final_time_state, self.final_note_state, self.prediction \
+            = self.forward_pass()
         self.loss = self.loss_function()
         self.optimize = self.optimizer()
 
@@ -30,11 +36,14 @@ class Model:
         # time model
         with tf.variable_scope('time_model'):
             time_lstm_cell = tf.contrib.rnn.MultiRNNCell(
-                [tf.contrib.rnn.GRUCell(sz) for sz in self.time_sizes]
+                [tf.contrib.rnn.GRUCell(sz) for sz in self.time_sizes],
+                state_is_tuple=True
             )
-            time_out, _ = tf.nn.dynamic_rnn(cell=time_lstm_cell,
-                                            inputs=x,
-                                            dtype=tf.float32)
+            time_out, time_state \
+                = tf.nn.dynamic_rnn(cell=time_lstm_cell,
+                                    inputs=x,
+                                    # initial_state=self.time_state,
+                                    dtype=tf.float32)
             time_out = tf.nn.dropout(time_out, self.keep_prob)
 
         # reshape from note invariant to time invariant
@@ -51,11 +60,14 @@ class Model:
         # note model
         with tf.variable_scope('note_model'):
             note_lstm_cell = tf.contrib.rnn.MultiRNNCell(
-                [tf.contrib.rnn.GRUCell(sz) for sz in self.note_sizes]
+                [tf.contrib.rnn.GRUCell(sz) for sz in self.note_sizes],
+                state_is_tuple=True
             )
-            note_out, _ = tf.nn.dynamic_rnn(cell=note_lstm_cell,
-                                            inputs=hidden,
-                                            dtype=tf.float32)
+            note_out, note_state \
+                = tf.nn.dynamic_rnn(cell=note_lstm_cell,
+                                    inputs=hidden,
+                                    # initial_state=self.note_state,
+                                    dtype=tf.float32)
             note_out = tf.nn.dropout(note_out, self.keep_prob)
 
         # dense layer
@@ -65,7 +77,8 @@ class Model:
         b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
         note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
         note_out = tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
-        return tf.nn.sigmoid(note_out)
+
+        return time_state, note_state, tf.nn.sigmoid(note_out)
 
     def optimizer(self):
         return tf.train.AdamOptimizer(1e-3).minimize(self.loss)

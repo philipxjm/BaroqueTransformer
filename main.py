@@ -91,15 +91,23 @@ def generate(model, pieces, save_name):
     saver = tf.train.import_meta_graph(save_name + '.meta')
     saver.restore(sess, save_name)
     x, y = getPieceBatch(pieces)
-    p = sess.run(model.prediction,
-                 feed_dict={model.inputs: x,
-                            model.labels: y,
-                            model.keep_prob: 1.0})
-    p = p[0]
-    r = np.random.random(p.shape)
-    p = np.greater(p, r).astype(int)
-    p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
-    noteStateMatrixToMidi(p, 'output/sample')
+    ts, ns = sess.run([model.final_time_state, model.final_note_state],
+                      feed_dict={model.inputs: x,
+                                 model.labels: y,
+                                 model.keep_prob: 1.0})
+    print(ts[0].shape)
+    print(ts[1].shape)
+    print(ns[0].shape)
+    print(ns[1].shape)
+    # p = sess.run(model.prediction,
+    #              feed_dict={model.inputs: x,
+    #                         model.labels: y,
+    #                         model.keep_prob: 1.0})
+    # p = p[0]
+    # r = np.random.random(p.shape)
+    # p = np.greater(p, r).astype(int)
+    # p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
+    # noteStateMatrixToMidi(p, 'output/sample')
     # print(p)
 
 
@@ -108,9 +116,10 @@ if __name__ == '__main__':
                                                NOTE_LEN, 80])
     labels = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
                                                NOTE_LEN, 2])
+    time_state = tf.placeholder(tf.float32, shape=[2, BATCH_SIZE*NOTE_LEN, 300])
     keep_prob = tf.placeholder(tf.float32)
-    pcs = loadPieces("data/midi/bee_test")
+    pcs = loadPieces("data/midi/nocturne")
     # print(getPieceBatch(pcs)[0].shape)
     m = model.Model(inputs, labels, keep_prob, [300, 300], [100, 50])
-    # train(m, pcs, 20000, "model/chopin_liszt/model_")
-    generate(m, pcs, "model/chopin_liszt/model_0.0003389749")
+    # train(m, pcs, 20000, "model/327/model_")
+    generate(m, pcs, "model/327/model_0.0023756323")
