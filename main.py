@@ -61,18 +61,18 @@ def train(model, pieces, epochs, save_name, start=0):
     pbar = tqdm(range(start, start+epochs))
     for i in pbar:
         x, y = getPieceBatch(pieces)
+        ts = np.zeros((2, 2, BATCH_SIZE*NOTE_LEN, 300), dtype=np.float32)
+        ns = np.zeros((2, 2, BATCH_SIZE*SEQ_LEN, 100), dtype=np.float32)
         l, _ = sess.run([model.loss, model.optimize],
                         feed_dict={model.inputs: x,
                                    model.labels: y,
+                                   model.time_state: ts,
+                                   model.note_state: ns,
                                    model.keep_prob: 0.5})
         # if i % 100 == 0:
         pbar.set_description("epoch {}, loss={}".format(i, l))
         if i % 100 == 0:
             print("epoch {}, loss={}".format(i, l))
-            # p = sess.run(model.prediction,
-            #              feed_dict={model.inputs: x,
-            #                         model.labels: y,
-            #                         model.keep_prob: 1.0})
         if i % 500 == 0:
             print("Saving at epoch {}, loss={}".format(i, l))
             saver.save(sess,
@@ -91,24 +91,22 @@ def generate(model, pieces, save_name):
     saver = tf.train.import_meta_graph(save_name + '.meta')
     saver.restore(sess, save_name)
     x, y = getPieceBatch(pieces)
-    ts, ns = sess.run([model.final_time_state, model.final_note_state],
-                      feed_dict={model.inputs: x,
-                                 model.labels: y,
-                                 model.keep_prob: 1.0})
-    print(ts[0].shape)
-    print(ts[1].shape)
-    print(ns[0].shape)
-    print(ns[1].shape)
-    # p = sess.run(model.prediction,
-    #              feed_dict={model.inputs: x,
-    #                         model.labels: y,
-    #                         model.keep_prob: 1.0})
-    # p = p[0]
-    # r = np.random.random(p.shape)
-    # p = np.greater(p, r).astype(int)
-    # p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
-    # noteStateMatrixToMidi(p, 'output/sample')
-    # print(p)
+    ts = np.zeros((2, 2, BATCH_SIZE*NOTE_LEN, 300), dtype=np.float32)
+    ns = np.zeros((2, 2, BATCH_SIZE*SEQ_LEN, 100), dtype=np.float32)
+
+    p, ts, ns = sess.run([model.prediction,
+                          model.final_time_state,
+                          model.final_note_state],
+                         feed_dict={model.inputs: x,
+                                    model.labels: y,
+                                    model.time_state: ts,
+                                    model.note_state: ns,
+                                    model.keep_prob: 1.0})
+    p = p[0]
+    r = np.random.random(p.shape)
+    p = np.greater(p, r).astype(int)
+    p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
+    noteStateMatrixToMidi(p, 'output/sample')
 
 
 if __name__ == '__main__':
@@ -116,10 +114,18 @@ if __name__ == '__main__':
                                                NOTE_LEN, 80])
     labels = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
                                                NOTE_LEN, 2])
-    time_state = tf.placeholder(tf.float32, shape=[2, BATCH_SIZE*NOTE_LEN, 300])
+    time_state = tf.placeholder(tf.float32, shape=[2, 2, BATCH_SIZE*NOTE_LEN, 300])
+    note_state = tf.placeholder(tf.float32, shape=[2, 2, BATCH_SIZE*SEQ_LEN, 100])
     keep_prob = tf.placeholder(tf.float32)
+
     pcs = loadPieces("data/midi/nocturne")
     # print(getPieceBatch(pcs)[0].shape)
-    m = model.Model(inputs, labels, keep_prob, [300, 300], [100, 50])
-    # train(m, pcs, 20000, "model/327/model_")
-    generate(m, pcs, "model/327/model_0.0023756323")
+    m = model.Model(inputs=inputs,
+                    labels=labels,
+                    keep_prob=keep_prob,
+                    time_states=time_state,
+                    note_states=note_state,
+                    time_sizes=[300, 300],
+                    note_sizes=[100, 100])
+    train(m, pcs, 20000, "model/LSTM/model_")
+    # generate(m, pcs, "model/327/model_0.0023756323")
