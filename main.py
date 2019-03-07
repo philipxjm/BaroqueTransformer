@@ -12,6 +12,11 @@ SEQ_LEN = 128
 NOTE_LEN = 78
 DIVISION_LEN = 16
 
+TIME_SIZE_0 = 500
+TIME_SIZE_1 = 500
+NOTE_SIZE_0 = 200
+NOTE_SIZE_1 = 100
+
 
 def loadPieces(dirpath):
     # loads midi pieces and converts them each to midi state matrices.
@@ -61,13 +66,9 @@ def train(model, pieces, epochs, save_name, start=0):
     pbar = tqdm(range(start, start+epochs))
     for i in pbar:
         x, y = getPieceBatch(pieces)
-        ts = np.zeros((2, 2, BATCH_SIZE*NOTE_LEN, 300), dtype=np.float32)
-        ns = np.zeros((2, 2, BATCH_SIZE*SEQ_LEN, 100), dtype=np.float32)
         l, _ = sess.run([model.loss, model.optimize],
                         feed_dict={model.inputs: x,
                                    model.labels: y,
-                                   model.time_state: ts,
-                                   model.note_state: ns,
                                    model.keep_prob: 0.5})
         # if i % 100 == 0:
         pbar.set_description("epoch {}, loss={}".format(i, l))
@@ -85,28 +86,59 @@ def train(model, pieces, epochs, save_name, start=0):
     saver.save(sess, save_name + str(final_loss[0]))
 
 
-def generate(model, pieces, save_name):
+def generate(model, pieces, save_name, length=500):
     sess = tf.Session()
     saver = tf.train.Saver()
     saver = tf.train.import_meta_graph(save_name + '.meta')
     saver.restore(sess, save_name)
     x, y = getPieceBatch(pieces)
-    ts = np.zeros((2, 2, BATCH_SIZE*NOTE_LEN, 300), dtype=np.float32)
-    ns = np.zeros((2, 2, BATCH_SIZE*SEQ_LEN, 100), dtype=np.float32)
 
-    p, ts, ns = sess.run([model.prediction,
-                          model.final_time_state,
-                          model.final_note_state],
-                         feed_dict={model.inputs: x,
-                                    model.labels: y,
-                                    model.time_state: ts,
-                                    model.note_state: ns,
-                                    model.keep_prob: 1.0})
-    p = p[0]
-    r = np.random.random(p.shape)
-    p = np.greater(p, r).astype(int)
-    p[:, :, 1] = np.multiply(p[:, :, 0], p[:, :, 1])
-    noteStateMatrixToMidi(p, 'output/sample')
+    ts_0_c = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
+    ts_0_h = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
+    ts_1_c = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
+    ts_1_h = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
+    ns_0_c = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
+    ns_0_h = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
+    ns_1_c = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
+    ns_1_h = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
+
+    composition = y[:, -1:, :, :]
+
+    pbar = tqdm(range(length))
+    for i in pbar:
+        # print("generating note" + str(i))
+        p, ts, ns = sess.run([model.prediction, model.final_time_state, model.final_note_state],
+                             feed_dict={model.inputs: x,
+                                        model.time_state[0].c: ts_0_c,
+                                        model.time_state[0].h: ts_0_h,
+                                        model.time_state[1].c: ts_1_c,
+                                        model.time_state[1].h: ts_1_h,
+                                        model.note_state[0].c: ns_0_c,
+                                        model.note_state[0].h: ns_0_h,
+                                        model.note_state[1].c: ns_1_c,
+                                        model.note_state[1].h: ns_1_h,
+                                        model.keep_prob: 1.0})
+
+        ts_0_c = ts[0].c
+        ts_0_h = ts[0].h
+        ts_1_c = ts[1].c
+        ts_1_h = ts[1].h
+        ns_0_c = ns[0].c
+        ns_0_h = ns[0].h
+        ns_1_c = ns[1].c
+        ns_1_h = ns[1].h
+
+        r = np.random.random(p.shape)
+        p = np.greater(p, r).astype(int)
+        p[:, :, :, 1] = np.multiply(p[:, :, :, 0], p[:, :, :, 1])
+
+        composition = np.append(composition, p[:, -1:, :, :], axis=1)
+
+        x = np.array([noteStateMatrixToInputForm(p_) for p_ in p])
+
+    for song_idx in range(composition.shape[0]):
+        noteStateMatrixToMidi(composition[song_idx],
+                              'output/sample_' + str(song_idx))
 
 
 if __name__ == '__main__':
@@ -114,18 +146,14 @@ if __name__ == '__main__':
                                                NOTE_LEN, 80])
     labels = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
                                                NOTE_LEN, 2])
-    time_state = tf.placeholder(tf.float32, shape=[2, 2, BATCH_SIZE*NOTE_LEN, 300])
-    note_state = tf.placeholder(tf.float32, shape=[2, 2, BATCH_SIZE*SEQ_LEN, 100])
     keep_prob = tf.placeholder(tf.float32)
 
-    pcs = loadPieces("data/midi/nocturne")
+    pcs = loadPieces("data/midi/327")
     # print(getPieceBatch(pcs)[0].shape)
     m = model.Model(inputs=inputs,
                     labels=labels,
                     keep_prob=keep_prob,
-                    time_states=time_state,
-                    note_states=note_state,
-                    time_sizes=[300, 300],
-                    note_sizes=[100, 100])
-    train(m, pcs, 20000, "model/LSTM/model_")
-    # generate(m, pcs, "model/327/model_0.0023756323")
+                    time_sizes=[TIME_SIZE_0, TIME_SIZE_1],
+                    note_sizes=[NOTE_SIZE_0, NOTE_SIZE_1])
+    train(m, pcs, 25000, "model/large/model_")
+    # generate(m, pcs, "model/NoTruth/model_0.0217607-7000")
