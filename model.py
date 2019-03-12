@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow.contrib.framework import nest
 
-BATCH_SIZE = 10
 SEQ_LEN = 128
 NOTE_LEN = 78
 EPS = 1e-10
@@ -16,6 +15,7 @@ class Model:
                  note_sizes=[100, 50]):
         self.inputs = inputs  # input shape (batch, time, note, feature)
         self.labels = labels  # label shape (batch, time, note, out)
+        self.batch_size = tf.shape(self.inputs)[0]
         self.keep_prob = keep_prob
         self.time_sizes = time_sizes
         self.note_sizes = note_sizes
@@ -29,7 +29,7 @@ class Model:
         )
         self.time_state = nest.map_structure(
             lambda x: tf.placeholder_with_default(x, x.shape, x.op.name),
-            self.time_lstm_cell.zero_state(BATCH_SIZE * NOTE_LEN, tf.float32))
+            self.time_lstm_cell.zero_state(self.batch_size * NOTE_LEN, tf.float32))
         for tensor in nest.flatten(self.time_state):
             tf.add_to_collection('time_state_input', tensor)
 
@@ -42,7 +42,7 @@ class Model:
         )
         self.note_state = nest.map_structure(
             lambda x: tf.placeholder_with_default(x, x.shape, x.op.name),
-            self.note_lstm_cell.zero_state(BATCH_SIZE * SEQ_LEN, tf.float32))
+            self.note_lstm_cell.zero_state(self.batch_size * SEQ_LEN, tf.float32))
         for tensor in nest.flatten(self.note_state):
             tf.add_to_collection('note_state_input', tensor)
 
@@ -53,7 +53,7 @@ class Model:
 
     def forward_pass(self):
         x = tf.transpose(self.inputs, perm=[0, 2, 1, 3])
-        x = tf.reshape(x, [BATCH_SIZE * NOTE_LEN, SEQ_LEN, -1])
+        x = tf.reshape(x, [self.batch_size * NOTE_LEN, SEQ_LEN, -1])
 
         # time model
         with tf.variable_scope('time_model'):
@@ -66,21 +66,23 @@ class Model:
                 tf.add_to_collection('time_state_output', tensor)
 
         # reshape from note invariant to time invariant
-        hidden = tf.reshape(time_out, [BATCH_SIZE, NOTE_LEN, SEQ_LEN, -1])
+        hidden = tf.reshape(time_out, [self.batch_size, NOTE_LEN, SEQ_LEN, self.time_sizes[1]])
         hidden = tf.transpose(hidden, perm=[0, 2, 1, 3])
-        hidden = tf.reshape(hidden, [BATCH_SIZE * SEQ_LEN, NOTE_LEN, -1])
-        # start_label = tf.zeros([BATCH_SIZE * SEQ_LEN, 1, 2])
-        # correct_choices, _ = tf.split(self.labels, [NOTE_LEN - 1, 1], 2)
-        # correct_choices = tf.reshape(correct_choices,
-        #                              [BATCH_SIZE * SEQ_LEN, NOTE_LEN - 1, -1])
-        # correct_choices = tf.concat([start_label, correct_choices], 1)
-        # hidden = tf.concat([hidden, correct_choices], 2)
+        hidden = tf.reshape(hidden, [self.batch_size * SEQ_LEN, NOTE_LEN, self.time_sizes[1]])
+        self.time_out = hidden
+        start_label = tf.zeros([self.batch_size * SEQ_LEN, 1, 2])
+        correct_choices, _ = tf.split(self.labels, [NOTE_LEN - 1, 1], 2)
+        correct_choices = tf.reshape(correct_choices,
+                                     [self.batch_size * SEQ_LEN, NOTE_LEN - 1, 2])
+        correct_choices = tf.concat([start_label, correct_choices], 1)
+        hidden = tf.concat([hidden, correct_choices], 2)
+        self.note_input = tf.placeholder_with_default(hidden, shape=[None, None, self.time_sizes[1] + 2])
 
         # note model
         with tf.variable_scope('note_model'):
             note_out, note_state \
                 = tf.nn.dynamic_rnn(cell=self.note_lstm_cell,
-                                    inputs=hidden,
+                                    inputs=self.note_input,
                                     initial_state=self.note_state,
                                     dtype=tf.float32)
             for tensor in nest.flatten(note_state):
@@ -92,7 +94,7 @@ class Model:
                                          dtype=tf.float32))
         b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
         note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
-        note_out = tf.reshape(note_out, [BATCH_SIZE, SEQ_LEN, NOTE_LEN, 2])
+        note_out = tf.reshape(note_out, [self.batch_size, SEQ_LEN, NOTE_LEN, 2])
 
         return time_state, note_state, tf.nn.sigmoid(note_out)
 

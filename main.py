@@ -12,9 +12,9 @@ SEQ_LEN = 128
 NOTE_LEN = 78
 DIVISION_LEN = 16
 
-TIME_SIZE_0 = 500
-TIME_SIZE_1 = 500
-NOTE_SIZE_0 = 200
+TIME_SIZE_0 = 300
+TIME_SIZE_1 = 300
+NOTE_SIZE_0 = 100
 NOTE_SIZE_1 = 100
 
 
@@ -86,55 +86,70 @@ def train(model, pieces, epochs, save_name, start=0):
     saver.save(sess, save_name + str(final_loss[0]))
 
 
-def generate(model, pieces, save_name, length=500):
+def generate(model, pieces, save_name, batch_size=10, length=500):
     sess = tf.Session()
     saver = tf.train.Saver()
     saver = tf.train.import_meta_graph(save_name + '.meta')
     saver.restore(sess, save_name)
     x, y = getPieceBatch(pieces)
 
-    ts_0_c = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
-    ts_0_h = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
-    ts_1_c = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
-    ts_1_h = np.zeros((BATCH_SIZE*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
-    ns_0_c = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
-    ns_0_h = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
-    ns_1_c = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
-    ns_1_h = np.zeros((BATCH_SIZE*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
+    ts_0_c = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
+    ts_0_h = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
+    ts_1_c = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
+    ts_1_h = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
+    ns_0_c = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
+    ns_0_h = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
+    ns_1_c = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
+    ns_1_h = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
 
-    composition = y[:, -1:, :, :]
+    composition = y[:, -1:, :, :]  # (batch_size, 1, pitch_sz, 2)
 
     pbar = tqdm(range(length))
     for i in pbar:
         # print("generating note" + str(i))
-        p, ts, ns = sess.run([model.prediction, model.final_time_state, model.final_note_state],
-                             feed_dict={model.inputs: x,
-                                        model.time_state[0].c: ts_0_c,
-                                        model.time_state[0].h: ts_0_h,
-                                        model.time_state[1].c: ts_1_c,
-                                        model.time_state[1].h: ts_1_h,
-                                        model.note_state[0].c: ns_0_c,
-                                        model.note_state[0].h: ns_0_h,
-                                        model.note_state[1].c: ns_1_c,
-                                        model.note_state[1].h: ns_1_h,
-                                        model.keep_prob: 1.0})
+        hi, ts = sess.run([model.time_out, model.final_time_state],
+                          feed_dict={model.inputs: x,
+                                     model.time_state[0].c: ts_0_c,
+                                     model.time_state[0].h: ts_0_h,
+                                     model.time_state[1].c: ts_1_c,
+                                     model.time_state[1].h: ts_1_h,
+                                     model.keep_prob: 1.0})
 
         ts_0_c = ts[0].c
         ts_0_h = ts[0].h
         ts_1_c = ts[1].c
         ts_1_h = ts[1].h
-        ns_0_c = ns[0].c
-        ns_0_h = ns[0].h
-        ns_1_c = ns[1].c
-        ns_1_h = ns[1].h
 
-        r = np.random.random(p.shape)
-        p = np.greater(p, r).astype(int)
-        p[:, :, :, 1] = np.multiply(p[:, :, :, 0], p[:, :, :, 1])
+        print(hi.shape)
 
-        composition = np.append(composition, p[:, -1:, :, :], axis=1)
+        step_composition = np.zeros((batch_size, 1, 2))
+        for j in range(NOTE_LEN):
+            note_input = np.append(hi[:, :j+1, :], step_composition, axis=2)
+            no, ns = sess.run([model.prediction, model.final_note_state],
+                              feed_dict={model.note_input: note_input,
+                                         model.note_state[0].c: ns_0_c,
+                                         model.note_state[0].h: ns_0_h,
+                                         model.note_state[1].c: ns_1_c,
+                                         model.note_state[1].h: ns_1_h,
+                                         model.keep_prob: 1.0})
+            ns_0_c = ns[0].c
+            ns_0_h = ns[0].h
+            ns_1_c = ns[1].c
+            ns_1_h = ns[1].h
+            step_composition = np.append(step_composition,
+                                         no[0, :, -1:, :],
+                                         axis=1)
 
-        x = np.array([noteStateMatrixToInputForm(p_) for p_ in p])
+        r = np.random.random(step_composition.shape)
+        step_composition = np.greater(step_composition, r).astype(int)
+        step_composition[:, :, 1] = np.multiply(step_composition[:, :, 0],
+                                                step_composition[:, :, 1])
+
+        composition = np.append(composition,
+                                np.expand_dims(step_composition, axis=1),
+                                axis=1)
+
+        x = np.array([noteStateMatrixToInputForm(p_) for p_ in np.expand_dims(step_composition, axis=1)])
 
     for song_idx in range(composition.shape[0]):
         noteStateMatrixToMidi(composition[song_idx],
@@ -148,12 +163,12 @@ if __name__ == '__main__':
                                                NOTE_LEN, 2])
     keep_prob = tf.placeholder(tf.float32)
 
-    pcs = loadPieces("data/midi/327")
+    pcs = loadPieces("data/midi/nocturne")
     # print(getPieceBatch(pcs)[0].shape)
     m = model.Model(inputs=inputs,
                     labels=labels,
                     keep_prob=keep_prob,
                     time_sizes=[TIME_SIZE_0, TIME_SIZE_1],
                     note_sizes=[NOTE_SIZE_0, NOTE_SIZE_1])
-    train(m, pcs, 25000, "model/large/model_")
-    # generate(m, pcs, "model/NoTruth/model_0.0217607-7000")
+    # train(m, pcs, 25000, "model/new/model_")
+    generate(m, pcs, "model/new/model_0.3516726-0")
