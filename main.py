@@ -86,7 +86,7 @@ def train(model, pieces, epochs, save_name, start=0):
     saver.save(sess, save_name + str(final_loss[0]))
 
 
-def generate(model, pieces, save_name, batch_size=10, length=500):
+def generate(model, pieces, save_name, batch_size=10, length=100):
     sess = tf.Session()
     saver = tf.train.Saver()
     saver = tf.train.import_meta_graph(save_name + '.meta')
@@ -97,18 +97,21 @@ def generate(model, pieces, save_name, batch_size=10, length=500):
     ts_0_h = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_0), dtype=np.float32)
     ts_1_c = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
     ts_1_h = np.zeros((batch_size*NOTE_LEN, TIME_SIZE_1), dtype=np.float32)
-    ns_0_c = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
-    ns_0_h = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_0), dtype=np.float32)
-    ns_1_c = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
-    ns_1_h = np.zeros((batch_size*SEQ_LEN, NOTE_SIZE_1), dtype=np.float32)
+    ns_0_c = np.zeros((batch_size, NOTE_SIZE_0), dtype=np.float32)
+    ns_0_h = np.zeros((batch_size, NOTE_SIZE_0), dtype=np.float32)
+    ns_1_c = np.zeros((batch_size, NOTE_SIZE_1), dtype=np.float32)
+    ns_1_h = np.zeros((batch_size, NOTE_SIZE_1), dtype=np.float32)
 
+    time_input = x[:, -1:, :, :]
     composition = y[:, -1:, :, :]  # (batch_size, 1, pitch_sz, 2)
+
+    print(time_input.shape)
 
     pbar = tqdm(range(length))
     for i in pbar:
         # print("generating note" + str(i))
         hi, ts = sess.run([model.time_out, model.final_time_state],
-                          feed_dict={model.inputs: x,
+                          feed_dict={model.inputs: time_input,
                                      model.time_state[0].c: ts_0_c,
                                      model.time_state[0].h: ts_0_h,
                                      model.time_state[1].c: ts_1_c,
@@ -127,6 +130,7 @@ def generate(model, pieces, save_name, batch_size=10, length=500):
             note_input = np.append(hi[:, :j+1, :], step_composition, axis=2)
             no, ns = sess.run([model.prediction, model.final_note_state],
                               feed_dict={model.note_input: note_input,
+                                         model.inputs: time_input,
                                          model.note_state[0].c: ns_0_c,
                                          model.note_state[0].h: ns_0_h,
                                          model.note_state[1].c: ns_1_c,
@@ -137,13 +141,18 @@ def generate(model, pieces, save_name, batch_size=10, length=500):
             ns_1_c = ns[1].c
             ns_1_h = ns[1].h
             step_composition = np.append(step_composition,
-                                         no[0, :, -1:, :],
+                                         no[:, 0, -1:, :],
                                          axis=1)
 
         r = np.random.random(step_composition.shape)
         step_composition = np.greater(step_composition, r).astype(int)
         step_composition[:, :, 1] = np.multiply(step_composition[:, :, 0],
                                                 step_composition[:, :, 1])
+        step_composition = step_composition[:, 1:, :]
+
+
+        print(composition.shape)
+        print(np.expand_dims(step_composition, axis=1).shape)
 
         composition = np.append(composition,
                                 np.expand_dims(step_composition, axis=1),
@@ -157,9 +166,9 @@ def generate(model, pieces, save_name, batch_size=10, length=500):
 
 
 if __name__ == '__main__':
-    inputs = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
+    inputs = tf.placeholder(tf.float32, shape=[None, None,
                                                NOTE_LEN, 80])
-    labels = tf.placeholder(tf.float32, shape=[BATCH_SIZE, SEQ_LEN,
+    labels = tf.placeholder(tf.float32, shape=[None, None,
                                                NOTE_LEN, 2])
     keep_prob = tf.placeholder(tf.float32)
 
@@ -171,4 +180,4 @@ if __name__ == '__main__':
                     time_sizes=[TIME_SIZE_0, TIME_SIZE_1],
                     note_sizes=[NOTE_SIZE_0, NOTE_SIZE_1])
     # train(m, pcs, 25000, "model/new/model_")
-    generate(m, pcs, "model/new/model_0.3516726-0")
+    generate(m, pcs, "model/new/model_0.35270143-0")

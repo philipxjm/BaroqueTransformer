@@ -53,7 +53,7 @@ class Model:
 
     def forward_pass(self):
         x = tf.transpose(self.inputs, perm=[0, 2, 1, 3])
-        x = tf.reshape(x, [self.batch_size * NOTE_LEN, SEQ_LEN, -1])
+        x = tf.reshape(x, [self.batch_size * NOTE_LEN, -1, 80])
 
         # time model
         with tf.variable_scope('time_model'):
@@ -66,9 +66,9 @@ class Model:
                 tf.add_to_collection('time_state_output', tensor)
 
         # reshape from note invariant to time invariant
-        hidden = tf.reshape(time_out, [self.batch_size, NOTE_LEN, SEQ_LEN, self.time_sizes[1]])
+        hidden = tf.reshape(time_out, [self.batch_size, NOTE_LEN, -1, self.time_sizes[1]])
         hidden = tf.transpose(hidden, perm=[0, 2, 1, 3])
-        hidden = tf.reshape(hidden, [self.batch_size * SEQ_LEN, NOTE_LEN, self.time_sizes[1]])
+        hidden = tf.reshape(hidden, [-1, NOTE_LEN, self.time_sizes[1]])
         self.time_out = hidden
         start_label = tf.zeros([self.batch_size * SEQ_LEN, 1, 2])
         correct_choices, _ = tf.split(self.labels, [NOTE_LEN - 1, 1], 2)
@@ -77,6 +77,7 @@ class Model:
         correct_choices = tf.concat([start_label, correct_choices], 1)
         hidden = tf.concat([hidden, correct_choices], 2)
         self.note_input = tf.placeholder_with_default(hidden, shape=[None, None, self.time_sizes[1] + 2])
+        note_len = tf.shape(self.note_input)[1]
 
         # note model
         with tf.variable_scope('note_model'):
@@ -94,7 +95,7 @@ class Model:
                                          dtype=tf.float32))
         b = tf.Variable(tf.random_normal([2], stddev=0.01, dtype=tf.float32))
         note_out = tf.tensordot(note_out, W, axes=[[2], [0]]) + b
-        note_out = tf.reshape(note_out, [self.batch_size, SEQ_LEN, NOTE_LEN, 2])
+        note_out = tf.reshape(note_out, [self.batch_size, -1, note_len, 2])
 
         return time_state, note_state, tf.nn.sigmoid(note_out)
 
