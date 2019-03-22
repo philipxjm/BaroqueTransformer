@@ -1,78 +1,117 @@
-import itertools
-from midi_handler import upperBound, lowerBound
 import numpy as np
+import pickle
+import hyper_params as hp
 
 
-def startSentinel():
-    def noteSentinel(note):
-        position = note
-        part_position = [position]
-
-        pitchclass = (note + lowerBound) % 12
-        part_pitchclass = [int(i == pitchclass) for i in range(12)]
-
-        return part_position + part_pitchclass + [0]*66 + [1]
-    return [noteSentinel(note) for note in range(upperBound-lowerBound)]
+def load_pieces(dirpath):
+    # loads piano roll
+    file = open(dirpath, "rb")
+    pieces = pickle.load(file, encoding="latin1")
+    pieces = clean_pieces(pieces)
+    pieces, seqlens = pad_pieces_to_max(pieces)
+    return pieces, seqlens
 
 
-def getOrDefault(l, i, d):
-    try:
-        return l[i]
-    except IndexError:
-        return d
+def clean_pieces(pieces):
+    def pad(chord):
+        # pad to 4 voices
+        padded = np.array(list(chord))
+        while len(padded) < 4:
+            padded = np.append([hp.REST], padded)
+        return padded
+
+    def clean_piece(piece):
+        # pad and serialize
+        return np.array([pad(chord) for chord in piece]).flatten()
+    pieces["train"] = np.array([clean_piece(p) for p in pieces["train"]])
+    pieces["test"] = np.array([clean_piece(p) for p in pieces["test"]])
+    pieces["valid"] = np.array([clean_piece(p) for p in pieces["valid"]])
+    return pieces
 
 
-def buildContext(state):
-    context = [0]*12
-    for note, notestate in enumerate(state):
-        if notestate[0] == 1:
-            pitchclass = (note + lowerBound) % 12
-            context[pitchclass] += 1
-    return context
+def pad_pieces_to_max(pieces):
+    def pad_piece_to_max(piece):
+        while len(piece) < hp.MAX_LEN + 1:
+            piece = np.append([hp.PAD], piece)
+        return piece
+
+    def seperate_long_piece(pieces_list):
+        new_pieces = []
+        for i in range(len(pieces_list)):
+            piece = np.append(pieces_list[i], [hp.STOP])
+            if len(pieces_list[i]) > hp.MAX_LEN + 1:
+                new_pieces = new_pieces \
+                             + [piece[j:j+hp.MAX_LEN+1] for j in
+                                range(0, len(piece), hp.SEPERATION)]
+            else:
+                new_pieces.append(pad_piece_to_max(piece))
+        new_pieces = list(
+            filter(lambda x: len(x) == hp.MAX_LEN + 1, new_pieces)
+        )
+        return np.array(new_pieces)
+
+    pieces["train"] = seperate_long_piece(pieces["train"])
+    pieces["test"] = seperate_long_piece(pieces["test"])
+    pieces["valid"] = seperate_long_piece(pieces["valid"])
+
+    seqlens = {
+        "train": np.zeros(len(pieces["train"])),
+        "test": np.zeros(len(pieces["test"])),
+        "valid": np.zeros(len(pieces["valid"]))
+    }
+
+    for i in range(len(pieces["train"])):
+        seqlens["train"][i] = len(pieces["train"][i])
+    for i in range(len(pieces["test"])):
+        seqlens["test"][i] = len(pieces["test"][i])
+    for i in range(len(pieces["valid"])):
+        seqlens["valid"][i] = len(pieces["valid"][i])
+    return pieces, seqlens
 
 
-def buildBeat(time):
-    return [2*x-1 for x in [time % 2,
-                            (time//2) % 2,
-                            (time//4) % 2,
-                            (time//8) % 2]]
+def build_vocab(pieces):
+    total_notes = np.hstack((pieces["train"].astype(int).flatten(),
+                             pieces["test"].astype(int).flatten(),
+                             pieces["valid"].astype(int).flatten()))
+    vocabs = set(total_notes)
+    vocabs.remove(hp.PAD)
+    idx2token = {i+1: w for i, w in enumerate(vocabs)}
+    token2idx = {w: i+1 for i, w in enumerate(vocabs)}
+    idx2token[0] = hp.PAD
+    token2idx[hp.PAD] = 0
+
+    # print(idx2token[0])
+    # print(token2idx[hp.PAD])
+
+    return token2idx, idx2token
 
 
-def noteInputForm(note, state, context, beat):
-    position = note
-    part_position = [position]
-
-    pitchclass = (note + lowerBound) % 12
-    part_pitchclass = [int(i == pitchclass) for i in range(12)]
-    # Concatenate the note states for the previous vicinity
-    part_prev_vicinity = list(itertools.chain.from_iterable(
-        (getOrDefault(state, note+i, [0, 0]) for i in range(-12, 13))))
-
-    part_context = context[pitchclass:] + context[:pitchclass]
-
-    return part_position \
-        + part_pitchclass \
-        + part_prev_vicinity \
-        + part_context \
-        + beat \
-        + [0]
+def tokenize(pieces, token2idx, idx2token):
+    pieces["train"] = np.array(
+        [[token2idx[w] for w in p] for p in pieces["train"]]
+    )
+    pieces["test"] = np.array(
+        [[token2idx[w] for w in p] for p in pieces["test"]]
+    )
+    pieces["valid"] = np.array(
+        [[token2idx[w] for w in p] for p in pieces["valid"]]
+    )
+    return pieces
 
 
-def noteStateSingleToInputForm(state, time):
-    beat = buildBeat(time)
-    context = buildContext(state)
-    return [noteInputForm(note,
-                          state,
-                          context,
-                          beat) for note in range(len(state))]
+def get_batch(pieces):
+    batch_indices = np.random.choice(len(pieces["train"]),
+                                     size=hp.BATCH_SIZE,
+                                     replace=True)
+    x = pieces["train"][batch_indices][:, :-1]
+    y = pieces["train"][batch_indices][:, -1]
+    # seqlens = seqlens["train"][batch_indices]
+    # print(x[:, -5:])
+    # print(y)
+    return x.astype(int), y.astype(int)
 
 
-def noteStateMatrixToInputForm(statematrix):
-    # NOTE: May have to transpose this or transform it
-    # in some way to make Theano like it
-    # [startSentinel()]
-
-    inputform = [noteStateSingleToInputForm(state, time)
-                 for time, state in enumerate(statematrix)]
-    # print(np.array(inputform).shape)
-    return inputform
+# pieces, seqlens = load_pieces("data/roll/jsb16.pkl")
+# get_batch(pieces, seqlens)
+# token2idx, idx2token = build_vocab(load_pieces("data/roll/jsb16.pkl")[0])
+# print(tokenize(load_pieces("data/roll/jsb16.pkl")[0], token2idx, idx2token)["train"])
