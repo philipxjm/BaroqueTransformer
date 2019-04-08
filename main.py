@@ -67,12 +67,14 @@ def generate(model, pieces, save_name, batch_size=10, length=1000):
 
 if __name__ == '__main__':
     inputs = tf.placeholder(tf.int32, shape=[None, hp.MAX_LEN])
-    labels = tf.placeholder(tf.int32, shape=[None])
+    labels = tf.placeholder(tf.int32, shape=[None, hp.MAX_LEN])
 
     pieces, seqlens = load_pieces("data/roll/jsb16.pkl")
     token2idx, idx2token = build_vocab(pieces)
     pieces = tokenize(pieces, token2idx, idx2token)
     m = model.Model(inputs=inputs,
-                    labels=labels)
+                    labels=labels,
+                    token2idx=token2idx,
+                    idx2token=idx2token)
     train(m, pieces, 500000, "model/transformer/model_")
     # generate(m, pieces, "model/transformer/model_0.07783421")

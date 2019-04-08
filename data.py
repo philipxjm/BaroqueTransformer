@@ -103,6 +103,7 @@ def get_batch(pieces):
     batch_indices = np.random.choice(len(pieces["train"]),
                                      size=hp.BATCH_SIZE,
                                      replace=True)
+    print(pieces["train"][batch_indices].shape)
     x = pieces["train"][batch_indices][:, :-1]
     y = pieces["train"][batch_indices][:, -1]
     # seqlens = seqlens["train"][batch_indices]
