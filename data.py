@@ -32,7 +32,7 @@ def clean_pieces(pieces):
 def pad_pieces_to_max(pieces):
     def pad_piece_to_max(piece):
         while len(piece) < hp.MAX_LEN + 1:
-            piece = np.append([hp.PAD], piece)
+            piece = np.append(piece, [hp.PAD])
         return piece
 
     def seperate_long_piece(pieces_list):
@@ -74,7 +74,8 @@ def build_vocab(pieces):
                              pieces["test"].astype(int).flatten(),
                              pieces["valid"].astype(int).flatten()))
     vocabs = set(total_notes)
-    vocabs.remove(hp.PAD)
+    if hp.PAD in vocabs:
+        vocabs.remove(hp.PAD)
     idx2token = {i+1: w for i, w in enumerate(vocabs)}
     token2idx = {w: i+1 for i, w in enumerate(vocabs)}
     idx2token[0] = hp.PAD
@@ -99,20 +100,24 @@ def tokenize(pieces, token2idx, idx2token):
     return pieces
 
 
-def get_batch(pieces):
+def get_batch(pieces, batch_size=hp.BATCH_SIZE):
     batch_indices = np.random.choice(len(pieces["train"]),
-                                     size=hp.BATCH_SIZE,
+                                     size=batch_size,
                                      replace=True)
-    print(pieces["train"][batch_indices].shape)
-    x = pieces["train"][batch_indices][:, :-1]
-    y = pieces["train"][batch_indices][:, -1]
+    # print(batch_indices)
+    # print(pieces["train"][batch_indices][:, :-1].shape)
+    x = pieces["train"][batch_indices][:, 1:]
+    y = pieces["train"][batch_indices][:, 1:]
     # seqlens = seqlens["train"][batch_indices]
     # print(x[:, -5:])
     # print(y)
     return x.astype(int), y.astype(int)
 
 
-# pieces, seqlens = load_pieces("data/roll/jsb16.pkl")
-# get_batch(pieces, seqlens)
-# token2idx, idx2token = build_vocab(load_pieces("data/roll/jsb16.pkl")[0])
+# pieces, seqlens = load_pieces("data/roll/jsb8.pkl")
+# print(pieces["test"].shape)
+# get_batch(pieces)
+token2idx, idx2token = build_vocab(load_pieces("data/roll/jsb8.pkl")[0])
+print(idx2token)
+# print(len(token2idx))
 # print(tokenize(load_pieces("data/roll/jsb16.pkl")[0], token2idx, idx2token)["train"])

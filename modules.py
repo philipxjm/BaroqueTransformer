@@ -43,9 +43,8 @@ def get_token_embeddings(vocab_size, num_units, zero_pad=True):
 
 
 def scaled_dot_product_attention(Q, K, V,
-                                 causality=False,
-                                 dropout_rate=0.,
-                                 training=True,
+                                 causality,
+                                 dropout_rate,
                                  scope="scaled_dot_product_attention"):
     '''
     Q: Packed queries. 3d tensor. [N, T_q, d_k].
@@ -68,20 +67,11 @@ def scaled_dot_product_attention(Q, K, V,
         # key masking
         outputs = mask(outputs, Q, K, type="future")
 
-        # # causality or future blinding masking
-        # if causality:
-        #     outputs = mask(outputs, type="future")
-
         # softmax
         outputs = tf.nn.softmax(outputs)
 
-        # query masking
-        # outputs = mask(outputs, Q, K, type="query")
-
         # dropout
-        outputs = tf.layers.dropout(outputs,
-                                    rate=dropout_rate,
-                                    training=training)
+        outputs = tf.layers.dropout(outputs, dropout_rate)
 
         # weighted sum (context vectors)
         outputs = tf.matmul(outputs, V)  # (N, T_q, d_v)
@@ -90,49 +80,7 @@ def scaled_dot_product_attention(Q, K, V,
 
 
 def mask(inputs, queries=None, keys=None, type=None, mask=None):
-    """Masks paddings on keys or queries to inputs
-    inputs: 3d tensor. (N, T_q, T_k)
-    queries: 3d tensor. (N, T_q, d)
-    keys: 3d tensor. (N, T_k, d)
-    e.g.,
-    >> queries = tf.constant([[[1.],
-                        [2.],
-                        [0.]]], tf.float32) # (1, 3, 1)
-    >> keys = tf.constant([[[4.],
-                     [0.]]], tf.float32)  # (1, 2, 1)
-    >> inputs = tf.constant([[[4., 0.],
-                               [8., 0.],
-                               [0., 0.]]], tf.float32)
-    >> mask(inputs, queries, keys, "key")
-    array([[[ 4.0000000e+00, -4.2949673e+09],
-        [ 8.0000000e+00, -4.2949673e+09],
-        [ 0.0000000e+00, -4.2949673e+09]]], dtype=float32)
-    >> inputs = tf.constant([[[1., 0.],
-                             [1., 0.],
-                              [1., 0.]]], tf.float32)
-    >> mask(inputs, queries, keys, "query")
-    array([[[1., 0.],
-        [1., 0.],
-        [0., 0.]]], dtype=float32)
-    """
     padding_num = -2 ** 32 + 1
-    # if type in ("k", "key", "keys"):
-    #     # Generate masks
-    #     masks = tf.sign(tf.reduce_sum(tf.abs(keys), axis=-1))  # (N, T_k)
-    #     masks = tf.expand_dims(masks, 1) # (N, 1, T_k)
-    #     masks = tf.tile(masks, [1, tf.shape(queries)[1], 1])  # (N, T_q, T_k)
-    #
-    #     # Apply masks to inputs
-    #     paddings = tf.ones_like(inputs) * padding_num
-    #     outputs = tf.where(tf.equal(masks, 0), paddings, inputs)  # (N, T_q, T_k)
-    # elif type in ("q", "query", "queries"):
-    #     # Generate masks
-    #     masks = tf.sign(tf.reduce_sum(tf.abs(queries), axis=-1))  # (N, T_q)
-    #     masks = tf.expand_dims(masks, -1)  # (N, T_q, 1)
-    #     masks = tf.tile(masks, [1, 1, tf.shape(keys)[1]])  # (N, T_q, T_k)
-    #
-    #     # Apply masks to inputs
-    #     outputs = inputs*masks
     if type in ("f", "future", "right"):
         diag_vals = tf.ones_like(inputs[0, :, :])  # (T_q, T_k)
         tril = tf.linalg.LinearOperatorLowerTriangular(diag_vals).to_dense()  # (T_q, T_k)
@@ -147,9 +95,8 @@ def mask(inputs, queries=None, keys=None, type=None, mask=None):
 
 
 def multihead_attention(queries, keys, values,
-                        num_heads=8,
-                        dropout_rate=0,
-                        training=True,
+                        num_heads,
+                        dropout,
                         causality=False,
                         scope="multihead_attention"):
     '''Applies multihead attention. See 3.2.2
@@ -186,8 +133,7 @@ def multihead_attention(queries, keys, values,
         # Attention
         outputs = scaled_dot_product_attention(Q_, K_, V_,
                                                causality,
-                                               dropout_rate,
-                                               training)
+                                               dropout)
 
         # Restore shape
         # (N, T_q, d_model)
