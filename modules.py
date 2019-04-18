@@ -71,7 +71,7 @@ def scaled_dot_product_attention(Q, K, V,
         outputs = tf.nn.softmax(outputs)
 
         # dropout
-        outputs = tf.layers.dropout(outputs, dropout_rate)
+        outputs = tf.nn.dropout(outputs, dropout_rate)
 
         # weighted sum (context vectors)
         outputs = tf.matmul(outputs, V)  # (N, T_q, d_v)

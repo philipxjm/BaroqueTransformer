@@ -30,7 +30,7 @@ class Model:
             enc *= hp.HIDDEN_SIZE**0.5
 
             enc += positional_encoding(enc, hp.MAX_LEN)
-            enc = tf.layers.dropout(enc, self.dropout)
+            enc = tf.nn.dropout(enc, self.dropout)
 
             # Blocks
             for i in range(hp.NUM_BLOCKS):

@@ -106,7 +106,7 @@ def get_batch(pieces, batch_size=hp.BATCH_SIZE):
                                      replace=True)
     # print(batch_indices)
     # print(pieces["train"][batch_indices][:, :-1].shape)
-    x = pieces["train"][batch_indices][:, 1:]
+    x = pieces["train"][batch_indices][:, :-1]
     y = pieces["train"][batch_indices][:, 1:]
     # seqlens = seqlens["train"][batch_indices]
     # print(x[:, -5:])
@@ -114,10 +114,19 @@ def get_batch(pieces, batch_size=hp.BATCH_SIZE):
     return x.astype(int), y.astype(int)
 
 
+def get_test_batch(pieces, batch_size=hp.BATCH_SIZE):
+    batch_indices = np.random.choice(len(pieces["test"]),
+                                     size=batch_size,
+                                     replace=True)
+    x = pieces["test"][batch_indices][:, :-1]
+    y = pieces["test"][batch_indices][:, 1:]
+    return x.astype(int), y.astype(int)
+
+
 # pieces, seqlens = load_pieces("data/roll/jsb8.pkl")
 # print(pieces["test"].shape)
 # get_batch(pieces)
-token2idx, idx2token = build_vocab(load_pieces("data/roll/jsb8.pkl")[0])
-print(idx2token)
+# token2idx, idx2token = build_vocab(load_pieces("data/roll/jsb8.pkl")[0])
+# print(idx2token)
 # print(len(token2idx))
 # print(tokenize(load_pieces("data/roll/jsb16.pkl")[0], token2idx, idx2token)["train"])
