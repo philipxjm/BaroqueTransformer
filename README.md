@@ -1,2 +1,2 @@
 # BaroqueTransformer
-Baroque music generation and counterpoint using Transformer.
+Baroque music generation using Transformer.
