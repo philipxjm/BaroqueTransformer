@@ -1,6 +1,7 @@
 import model
 import tensorflow as tf
-from data import load_pieces, get_batch, build_vocab, tokenize, get_test_batch
+from data import load_pieces, get_training_batch, build_vocab, \
+                 tokenize, get_test_batch
 import numpy as np
 import sys
 from tqdm import tqdm
@@ -16,7 +17,7 @@ def train(model, pieces, epochs, save_name, start=0):
     saver = tf.train.Saver()
     pbar = tqdm(range(start, start+epochs))
     for i in pbar:
-        x, y = get_batch(pieces)
+        x, y = get_training_batch(pieces)
         l, _ = sess.run([model.loss, model.optimize],
                         feed_dict={model.inputs: x,
                                    model.labels: y,
@@ -84,17 +85,21 @@ def generate(model,
     saver.restore(sess, save_name)
     x, _ = get_test_batch(pieces, 1)
 
-    time_input = x
+    time_input = np.copy(x)
     for i in range(16, time_input.shape[1]):
         time_input[0][i] = token2idx[hp.PAD]
     # (batch_size, max_len, pitch_sz)
     composition = np.zeros((time_input.shape[0],
                             int(time_input.shape[1] / 4),
                             hp.NOTE_LEN, 2))
+    real_comp = np.zeros((time_input.shape[0],
+                          int(time_input.shape[1] / 4),
+                          hp.NOTE_LEN, 2))
     previous = np.zeros((hp.NOTE_LEN, 2))
-
+    real_previous = np.zeros((hp.NOTE_LEN, 2))
     # pbar = tqdm(range(length))
     # print(time_input)
+    # int(time_input.shape[1] / 4)
     for i in range(4, int(time_input.shape[1] / 4)):
         for j in range(4):
             # (batch_size, max_len, vocab_size)
@@ -111,13 +116,25 @@ def generate(model,
                 else:
                     composition[0][i][pitch][1] = 1
 
+            real_pitch = idx2token[x[0][i*4 + j]] - 24
+            if real_pitch < hp.NOTE_LEN:
+                real_comp[0][i][real_pitch][0] = 1
+                if real_previous[real_pitch][0] == 1:
+                    real_comp[0][i][real_pitch][1] = 0
+                else:
+                    real_comp[0][i][real_pitch][1] = 1
+
             time_input[0][i*4 + j] = activation[0][i*4 + j-1]
             print(time_input)
         previous = composition[0][i]
+        real_previous = real_comp[0][i]
     print(composition.shape)
     for song_idx in range(composition.shape[0]):
         noteStateMatrixToMidi(composition[song_idx],
                               'output/sample_' + str(song_idx))
+    for song_idx in range(real_comp.shape[0]):
+        noteStateMatrixToMidi(real_comp[song_idx],
+                              'output/real_sample_' + str(song_idx))
 
 
 if __name__ == '__main__':
@@ -126,7 +143,6 @@ if __name__ == '__main__':
     dropout = tf.placeholder(tf.float32, shape=())
 
     pieces, seqlens = load_pieces("data/roll/jsb8.pkl")
-    # pieces, seqlens = load_pieces("data/roll/jsb4.pkl")
     token2idx, idx2token = build_vocab(pieces)
     pieces = tokenize(pieces, token2idx, idx2token)
     m = model.Model(inputs=inputs,
@@ -135,5 +151,5 @@ if __name__ == '__main__':
                     token2idx=token2idx,
                     idx2token=idx2token)
     # train(m, pieces, 500000, "model/jsb8/model_")
-    # test(m, pieces, "model/jsb8/model_0.009289647-141000")
-    generate(m, pieces, "model/jsb8/model_0.009289647-141000", token2idx, idx2token)
+    # test(m, pieces, "model/jsb8/model")
+    generate(m, pieces, "model/jsb8/model", token2idx, idx2token)

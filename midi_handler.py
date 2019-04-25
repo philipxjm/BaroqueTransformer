@@ -74,7 +74,7 @@ def noteStateMatrixToMidi(statematrix, name="example"):
     pattern.append(track)
 
     span = upperBound-lowerBound
-    tickscale = 55
+    tickscale = 120
 
     lastcmdtime = 0
     prevstate = [[0, 0] for x in range(span)]

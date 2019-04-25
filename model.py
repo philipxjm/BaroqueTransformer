@@ -11,7 +11,7 @@ class Model:
         self.dropout = dropout
         self.token2idx = token2idx
         self.idx2token = idx2token
-        self.embeddings = get_token_embeddings(hp.VOCAB_SIZE,
+        self.embeddings = get_token_embeddings(len(self.token2idx),
                                                hp.HIDDEN_SIZE,
                                                zero_pad=True)
 
@@ -42,21 +42,22 @@ class Model:
                                               values=enc,
                                               num_heads=hp.NUM_HEADS,
                                               dropout=self.dropout,
-                                              causality=False)
+                                              causality=True)
                     # feed forward
                     enc = ff(enc, num_units=[hp.FF_SIZE, hp.HIDDEN_SIZE])
 
         output = tf.reshape(enc, (-1, hp.MAX_LEN, hp.HIDDEN_SIZE))
-        logits = tf.layers.dense(output, hp.VOCAB_SIZE)
+        logits = tf.layers.dense(output, len(self.token2idx))
         return logits
 
-    def loss_function(self, logits, labels):
+    def loss_function(self, logits, inputs, labels):
         nonpadding = tf.to_float(tf.not_equal(labels, self.token2idx[hp.PAD]))
+        # nonmasking = tf.to_float(tf.not_equal(inputs, self.token2idx[hp.MASK]))
         ce = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
                                                             labels=labels)
         loss = tf.reduce_sum(ce*nonpadding) / (tf.reduce_sum(nonpadding)+1e-7)
         return loss
 
     def train(self, inputs, labels):
-        loss = self.loss_function(self.logits, labels)
+        loss = self.loss_function(self.logits, inputs, labels)
         return tf.train.AdamOptimizer(1e-4).minimize(loss), loss

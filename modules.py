@@ -52,7 +52,6 @@ def scaled_dot_product_attention(Q, K, V,
     V: Packed values. 3d tensor. [N, T_k, d_v].
     causality: If True, applies masking for future blinding
     dropout_rate: A floating point number of [0, 1].
-    training: boolean for controlling droput
     scope: Optional scope for `variable_scope`.
     '''
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE):
@@ -65,7 +64,8 @@ def scaled_dot_product_attention(Q, K, V,
         outputs /= d_k ** 0.5
 
         # key masking
-        outputs = mask(outputs, Q, K, type="future")
+        # if causality:
+        outputs = mask(outputs)
 
         # softmax
         outputs = tf.nn.softmax(outputs)
@@ -79,17 +79,14 @@ def scaled_dot_product_attention(Q, K, V,
     return outputs
 
 
-def mask(inputs, queries=None, keys=None, type=None, mask=None):
+def mask(inputs):
     padding_num = -2 ** 32 + 1
-    if type in ("f", "future", "right"):
-        diag_vals = tf.ones_like(inputs[0, :, :])  # (T_q, T_k)
-        tril = tf.linalg.LinearOperatorLowerTriangular(diag_vals).to_dense()  # (T_q, T_k)
-        masks = tf.tile(tf.expand_dims(tril, 0), [tf.shape(inputs)[0], 1, 1])  # (N, T_q, T_k)
+    diag_vals = tf.ones_like(inputs[0, :, :])  # (T_q, T_k)
+    tril = tf.linalg.LinearOperatorLowerTriangular(diag_vals).to_dense()  # (T_q, T_k)
+    masks = tf.tile(tf.expand_dims(tril, 0), [tf.shape(inputs)[0], 1, 1])  # (N, T_q, T_k)
 
-        paddings = tf.ones_like(masks) * padding_num
-        outputs = tf.where(tf.equal(masks, 0), paddings, inputs)
-    else:
-        print("Check if you entered type correctly!")
+    paddings = tf.ones_like(masks) * padding_num
+    outputs = tf.where(tf.equal(masks, 0), paddings, inputs)
 
     return outputs
 
