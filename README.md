@@ -1,2 +1,2 @@
-# BaroqueGan
-Baroque music generation using DCGAN.
+# BaroqueTransformer
+Baroque music generation and counterpoint using Transformer.
